@@ -49,7 +49,7 @@ fn get_index_range<'a>(
 /// cannot maintain any invariant on its data members; hence, they are
 /// all public so as to allow for easy manipulation for testing.
 #[derive(Clone, Serialize, Deserialize)]
-pub struct QueryProof<CP: CommitmentEvaluationProof> {
+pub(super) struct QueryProof<CP: CommitmentEvaluationProof> {
     /// Bit distributions
     pub bit_distributions: Vec<BitDistribution>,
     /// One evaluation lengths
@@ -205,10 +205,10 @@ impl<CP: CommitmentEvaluationProof> QueryProof<CP> {
     #[tracing::instrument(name = "QueryProof::verify", level = "debug", skip_all, err)]
     /// Verify a `QueryProof`. Note: This does NOT transform the result!
     pub fn verify(
-        &self,
+        self,
         expr: &(impl ProofPlan + Serialize),
         accessor: &impl CommitmentAccessor<CP::Commitment>,
-        result: &ProvableQueryResult,
+        result: ProvableQueryResult,
         setup: &CP::VerifierPublicSetup<'_>,
     ) -> QueryResult<CP::Scalar> {
         let owned_table_result = result.to_owned_table(&expr.get_column_result_fields())?;
@@ -244,7 +244,7 @@ impl<CP: CommitmentEvaluationProof> QueryProof<CP> {
         // construct a transcript for the proof
         let mut transcript: Keccak256Transcript = make_transcript(
             expr,
-            result,
+            &result,
             self.range_length,
             min_row_num,
             &self.one_evaluation_lengths,
