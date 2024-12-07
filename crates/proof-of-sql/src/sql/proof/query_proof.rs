@@ -5,7 +5,7 @@ use super::{
 use crate::{
     base::{
         bit::BitDistribution,
-        commitment::CommitmentEvaluationProof,
+        commitment::{Commitment, CommitmentEvaluationProof},
         database::{
             ColumnRef, CommitmentAccessor, DataAccessor, MetadataAccessor, Table, TableRef,
         },
@@ -92,13 +92,12 @@ impl<CP: CommitmentEvaluationProof> QueryProof<CP> {
             })
             .collect();
 
-        // Evaluate query result
-        let (query_result, one_evaluation_lengths) = expr.result_evaluate(&alloc, &table_map);
-        let provable_result = query_result.into();
-
-        // Prover First Round
+        // Prover First Round: Evaluate the query && get the right number of post result challenges
         let mut first_round_builder = FirstRoundBuilder::new();
-        expr.first_round_evaluate(&mut first_round_builder);
+        let query_result = expr.first_round_evaluate(&mut first_round_builder, &alloc, &table_map);
+        let provable_result = query_result.into();
+        let one_evaluation_lengths = first_round_builder.one_evaluation_lengths();
+
         let range_length = one_evaluation_lengths
             .iter()
             .copied()
@@ -115,7 +114,7 @@ impl<CP: CommitmentEvaluationProof> QueryProof<CP> {
             &provable_result,
             range_length,
             min_row_num,
-            &one_evaluation_lengths,
+            one_evaluation_lengths,
         );
 
         // These are the challenges that will be consumed by the proof
@@ -192,7 +191,7 @@ impl<CP: CommitmentEvaluationProof> QueryProof<CP> {
 
         let proof = Self {
             bit_distributions: builder.bit_distributions().to_vec(),
-            one_evaluation_lengths,
+            one_evaluation_lengths: one_evaluation_lengths.to_vec(),
             commitments,
             sumcheck_proof,
             pcs_proof_evaluations,
@@ -431,11 +430,13 @@ fn make_transcript<T: Transcript>(
     transcript
 }
 
-fn extend_transcript<C: serde::Serialize>(
+fn extend_transcript<C: Commitment>(
     transcript: &mut impl Transcript,
-    commitments: &C,
+    commitments: &[C],
     bit_distributions: &[BitDistribution],
 ) {
-    transcript.extend_serialize_as_le(commitments);
+    for commitment in commitments {
+        commitment.append_to_transcript(transcript);
+    }
     transcript.extend_serialize_as_le(bit_distributions);
 }

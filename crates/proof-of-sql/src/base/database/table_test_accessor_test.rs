@@ -4,8 +4,8 @@ use super::{
 };
 use crate::base::{
     commitment::{
-        naive_commitment::NaiveCommitment, test_evaluation_proof::TestEvaluationProof, Commitment,
-        CommittableColumn,
+        naive_commitment::NaiveCommitment, naive_evaluation_proof::NaiveEvaluationProof,
+        Commitment, CommittableColumn,
     },
     database::table_utility::*,
     scalar::test_scalar::TestScalar,
@@ -16,7 +16,7 @@ use proof_of_sql_parser::posql_time::{PoSQLTimeUnit, PoSQLTimeZone};
 #[test]
 fn we_can_query_the_length_of_a_table() {
     let alloc = Bump::new();
-    let mut accessor = TableTestAccessor::<TestEvaluationProof>::new_empty_with_setup(());
+    let mut accessor = TableTestAccessor::<NaiveEvaluationProof>::new_empty_with_setup(());
     let table_ref_1 = "sxt.test".parse().unwrap();
     let table_ref_2 = "sxt.test2".parse().unwrap();
 
@@ -41,7 +41,7 @@ fn we_can_query_the_length_of_a_table() {
 #[test]
 fn we_can_access_the_columns_of_a_table() {
     let alloc = Bump::new();
-    let mut accessor = TableTestAccessor::<TestEvaluationProof>::new_empty_with_setup(());
+    let mut accessor = TableTestAccessor::<NaiveEvaluationProof>::new_empty_with_setup(());
     let table_ref_1 = "sxt.test".parse().unwrap();
     let table_ref_2 = "sxt.test2".parse().unwrap();
 
@@ -67,7 +67,7 @@ fn we_can_access_the_columns_of_a_table() {
         borrowed_timestamptz(
             "time",
             PoSQLTimeUnit::Second,
-            PoSQLTimeZone::Utc,
+            PoSQLTimeZone::utc(),
             [4, 5, 6, 5],
             &alloc,
         ),
@@ -129,7 +129,7 @@ fn we_can_access_the_columns_of_a_table() {
     let column = ColumnRef::new(
         table_ref_2,
         "time".parse().unwrap(),
-        ColumnType::TimestampTZ(PoSQLTimeUnit::Second, PoSQLTimeZone::Utc),
+        ColumnType::TimestampTZ(PoSQLTimeUnit::Second, PoSQLTimeZone::utc()),
     );
     match accessor.get_column(column) {
         Column::TimestampTZ(_, _, col) => assert_eq!(col.to_vec(), vec![4, 5, 6, 5]),
@@ -140,7 +140,7 @@ fn we_can_access_the_columns_of_a_table() {
 #[test]
 fn we_can_access_the_commitments_of_table_columns() {
     let alloc = Bump::new();
-    let mut accessor = TableTestAccessor::<TestEvaluationProof>::new_empty_with_setup(());
+    let mut accessor = TableTestAccessor::<NaiveEvaluationProof>::new_empty_with_setup(());
     let table_ref_1 = "sxt.test".parse().unwrap();
     let table_ref_2 = "sxt.test2".parse().unwrap();
 
@@ -190,7 +190,7 @@ fn we_can_access_the_commitments_of_table_columns() {
 #[test]
 fn we_can_access_the_type_of_table_columns() {
     let alloc = Bump::new();
-    let mut accessor = TableTestAccessor::<TestEvaluationProof>::new_empty_with_setup(());
+    let mut accessor = TableTestAccessor::<NaiveEvaluationProof>::new_empty_with_setup(());
     let table_ref_1 = "sxt.test".parse().unwrap();
     let table_ref_2 = "sxt.test2".parse().unwrap();
 
@@ -238,7 +238,7 @@ fn we_can_access_the_type_of_table_columns() {
 #[test]
 fn we_can_access_schema_and_column_names() {
     let alloc = Bump::new();
-    let mut accessor = TableTestAccessor::<TestEvaluationProof>::new_empty_with_setup(());
+    let mut accessor = TableTestAccessor::<NaiveEvaluationProof>::new_empty_with_setup(());
     let table_ref_1 = "sxt.test".parse().unwrap();
 
     let data1 = table([
@@ -260,7 +260,7 @@ fn we_can_access_schema_and_column_names() {
 #[test]
 fn we_can_correctly_update_offsets() {
     let alloc = Bump::new();
-    let mut accessor1 = TableTestAccessor::<TestEvaluationProof>::new_empty_with_setup(());
+    let mut accessor1 = TableTestAccessor::<NaiveEvaluationProof>::new_empty_with_setup(());
     let table_ref = "sxt.test".parse().unwrap();
 
     let data = table([
@@ -270,7 +270,7 @@ fn we_can_correctly_update_offsets() {
     accessor1.add_table(table_ref, data.clone(), 0_usize);
 
     let offset = 123;
-    let mut accessor2 = TableTestAccessor::<TestEvaluationProof>::new_empty_with_setup(());
+    let mut accessor2 = TableTestAccessor::<NaiveEvaluationProof>::new_empty_with_setup(());
     accessor2.add_table(table_ref, data, offset);
 
     let column = ColumnRef::new(table_ref, "a".parse().unwrap(), ColumnType::BigInt);
