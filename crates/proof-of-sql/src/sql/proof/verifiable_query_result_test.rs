@@ -1,6 +1,5 @@
 use super::{
-    CountBuilder, FinalRoundBuilder, ProofPlan, ProverEvaluate, VerifiableQueryResult,
-    VerificationBuilder,
+    FinalRoundBuilder, ProofPlan, ProverEvaluate, VerifiableQueryResult, VerificationBuilder,
 };
 use crate::{
     base::{
@@ -15,7 +14,7 @@ use crate::{
         proof::ProofError,
         scalar::Scalar,
     },
-    sql::proof::{FirstRoundBuilder, ProvableQueryResult, QueryData},
+    sql::proof::{FirstRoundBuilder, QueryData},
 };
 use bumpalo::Bump;
 use serde::Serialize;
@@ -58,11 +57,6 @@ impl ProverEvaluate for EmptyTestQueryExpr {
     }
 }
 impl ProofPlan for EmptyTestQueryExpr {
-    fn count(&self, builder: &mut CountBuilder) -> Result<(), ProofError> {
-        builder.count_intermediate_mles(self.columns);
-        Ok(())
-    }
-
     fn verifier_evaluate<S: Scalar>(
         &self,
         builder: &mut VerificationBuilder<S>,
@@ -70,14 +64,13 @@ impl ProofPlan for EmptyTestQueryExpr {
         _result: Option<&OwnedTable<S>>,
         _one_eval_map: &IndexMap<TableRef, S>,
     ) -> Result<TableEvaluation<S>, ProofError> {
-        let _ = std::iter::repeat_with(|| {
-            assert_eq!(builder.consume_intermediate_mle(), S::ZERO);
-        })
-        .take(self.columns)
-        .collect::<Vec<_>>();
+        assert_eq!(
+            builder.try_consume_mle_evaluations(self.columns)?,
+            vec![S::ZERO; self.columns]
+        );
         Ok(TableEvaluation::new(
             vec![S::ZERO; self.columns],
-            builder.consume_one_evaluation(),
+            builder.try_consume_one_evaluation()?,
         ))
     }
 
@@ -130,7 +123,7 @@ fn empty_verification_fails_if_the_result_contains_non_null_members() {
         (),
     );
     let res = VerifiableQueryResult::<InnerProductProof> {
-        provable_result: Some(ProvableQueryResult::default()),
+        result: Some(owned_table([])),
         proof: None,
     };
     assert!(res.verify(&expr, &accessor, &()).is_err());

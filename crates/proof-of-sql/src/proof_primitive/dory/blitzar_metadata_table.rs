@@ -1,12 +1,13 @@
-use super::{
-    dynamic_dory_structure::{
-        full_width_of_row, index_from_row_and_column, matrix_size, row_and_column_from_index,
-    },
-    G1Affine, F,
-};
+use super::{G1Affine, F};
 use crate::{
     base::{commitment::CommittableColumn, database::ColumnType, if_rayon},
-    proof_primitive::dory::offset_to_bytes::OffsetToBytes,
+    proof_primitive::{
+        dory::offset_to_bytes::OffsetToBytes,
+        dynamic_matrix_utils::matrix_structure::{
+            full_width_of_row, index_from_row_and_column, matrix_size, row_and_column_from_index,
+        },
+    },
+    utils::log,
 };
 use alloc::{vec, vec::Vec};
 use ark_ec::CurveGroup;
@@ -57,7 +58,13 @@ pub fn signed_commits(
     all_sub_commits: &Vec<G1Affine>,
     committable_columns: &[CommittableColumn],
 ) -> Vec<G1Affine> {
-    if_rayon!(
+    if committable_columns.is_empty() {
+        return vec![];
+    }
+
+    log::log_memory_usage("Start");
+
+    let res = if_rayon!(
         all_sub_commits.par_chunks_exact(committable_columns.len() * 2),
         all_sub_commits.chunks_exact(committable_columns.len() * 2)
     )
@@ -76,7 +83,11 @@ pub fn signed_commits(
         })
         .collect::<Vec<_>>()
     })
-    .collect()
+    .collect();
+
+    log::log_memory_usage("End");
+
+    res
 }
 
 /// Copies the column data to the scalar row slice.
@@ -143,6 +154,12 @@ pub fn create_blitzar_metadata_tables(
     committable_columns: &[CommittableColumn],
     offset: usize,
 ) -> (Vec<u32>, Vec<u32>, Vec<u8>) {
+    if committable_columns.is_empty() {
+        return (vec![], vec![], vec![]);
+    }
+
+    log::log_memory_usage("Start");
+
     // Keep track of the lengths of the columns to handled signed data columns.
     let ones_columns_lengths = committable_columns
         .iter()
@@ -210,7 +227,7 @@ pub fn create_blitzar_metadata_tables(
     let mut blitzar_scalars = vec![0u8; num_scalar_rows * num_scalar_columns];
 
     // Populate the scalars array.
-    let span = span!(Level::INFO, "pack_blitzar_scalars").entered();
+    let span = span!(Level::DEBUG, "pack_blitzar_scalars").entered();
     if !blitzar_scalars.is_empty() {
         if_rayon!(
             blitzar_scalars.par_chunks_exact_mut(num_scalar_columns),
@@ -261,6 +278,8 @@ pub fn create_blitzar_metadata_tables(
     }
     span.exit();
 
+    log::log_memory_usage("End");
+
     (
         blitzar_output_bit_table,
         blitzar_output_length_table,
@@ -296,6 +315,11 @@ mod tests {
             scalars, expected_scalars,
             "Scalars mismatch for offset {offset}"
         );
+    }
+
+    #[test]
+    fn we_can_handle_empty_committable_columns_in_blitzar_metadata_tables() {
+        assert_blitzar_metadata(&[], 0, &[], &[], &[]);
     }
 
     #[test]

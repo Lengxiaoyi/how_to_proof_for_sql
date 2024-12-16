@@ -1,11 +1,14 @@
-use super::{ProofPlan, ProvableQueryResult, QueryData, QueryProof, QueryResult};
-use crate::base::{
-    commitment::CommitmentEvaluationProof,
-    database::{
-        ColumnField, ColumnType, CommitmentAccessor, DataAccessor, OwnedColumn, OwnedTable,
+use super::{ProofPlan, QueryData, QueryProof, QueryResult};
+use crate::{
+    base::{
+        commitment::CommitmentEvaluationProof,
+        database::{
+            ColumnField, ColumnType, CommitmentAccessor, DataAccessor, OwnedColumn, OwnedTable,
+        },
+        proof::ProofError,
+        scalar::Scalar,
     },
-    proof::ProofError,
-    scalar::Scalar,
+    utils::log,
 };
 use alloc::vec;
 use serde::{Deserialize, Serialize};
@@ -69,7 +72,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Default, Clone, Serialize, Deserialize)]
 pub struct VerifiableQueryResult<CP: CommitmentEvaluationProof> {
     /// The result of the query in intermediate form.
-    pub(super) provable_result: Option<ProvableQueryResult>,
+    pub(super) result: Option<OwnedTable<CP::Scalar>>,
     /// The proof that the query result is valid.
     pub(super) proof: Option<QueryProof<CP>>,
 }
@@ -79,11 +82,14 @@ impl<CP: CommitmentEvaluationProof> VerifiableQueryResult<CP> {
     ///
     /// This function both computes the result of a query and constructs a proof of the results
     /// validity.
+    #[tracing::instrument(name = "VerifiableQueryResult::new", level = "info", skip_all)]
     pub fn new(
         expr: &(impl ProofPlan + Serialize),
         accessor: &impl DataAccessor<CP::Scalar>,
         setup: &CP::ProverPublicSetup<'_>,
     ) -> Self {
+        log::log_memory_usage("Start");
+
         // a query must have at least one result column; if not, it should
         // have been rejected at the parsing stage.
 
@@ -94,14 +100,17 @@ impl<CP: CommitmentEvaluationProof> VerifiableQueryResult<CP> {
             .all(|table_ref| accessor.get_length(table_ref) == 0)
         {
             return VerifiableQueryResult {
-                provable_result: None,
+                result: None,
                 proof: None,
             };
         }
 
         let (proof, res) = QueryProof::new(expr, accessor, setup);
+
+        log::log_memory_usage("End");
+
         Self {
-            provable_result: Some(res),
+            result: Some(res),
             proof: Some(proof),
         }
     }
@@ -113,15 +122,25 @@ impl<CP: CommitmentEvaluationProof> VerifiableQueryResult<CP> {
     /// error.
     ///
     /// Note: This does NOT transform the result!
+    #[tracing::instrument(name = "VerifiableQueryResult::verify", level = "info", skip_all)]
     pub fn verify(
         self,
         expr: &(impl ProofPlan + Serialize),
         accessor: &impl CommitmentAccessor<CP::Commitment>,
         setup: &CP::VerifierPublicSetup<'_>,
     ) -> QueryResult<CP::Scalar> {
-        match (self.provable_result, self.proof) {
-            (Some(provable_result), Some(proof)) => {
-                proof.verify(expr, accessor, provable_result, setup)
+        log::log_memory_usage("Start");
+
+        match (self.result, self.proof) {
+            (Some(result), Some(proof)) => {
+                let QueryData {
+                    table,
+                    verification_hash,
+                } = proof.verify(expr, accessor, result, setup)?;
+                Ok(QueryData {
+                    table: table.try_coerce_with_fields(expr.get_column_result_fields())?,
+                    verification_hash,
+                })
             }
             (None, None)
                 if expr

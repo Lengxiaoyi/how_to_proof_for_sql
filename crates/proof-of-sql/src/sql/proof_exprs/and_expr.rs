@@ -6,7 +6,8 @@ use crate::{
         proof::ProofError,
         scalar::Scalar,
     },
-    sql::proof::{CountBuilder, FinalRoundBuilder, SumcheckSubpolynomialType, VerificationBuilder},
+    sql::proof::{FinalRoundBuilder, SumcheckSubpolynomialType, VerificationBuilder},
+    utils::log,
 };
 use alloc::{boxed::Box, vec};
 use bumpalo::Bump;
@@ -27,15 +28,6 @@ impl AndExpr {
 }
 
 impl ProofExpr for AndExpr {
-    fn count(&self, builder: &mut CountBuilder) -> Result<(), ProofError> {
-        self.lhs.count(builder)?;
-        self.rhs.count(builder)?;
-        builder.count_subpolynomials(1);
-        builder.count_intermediate_mles(1);
-        builder.count_degree(3);
-        Ok(())
-    }
-
     fn data_type(&self) -> ColumnType {
         ColumnType::Boolean
     }
@@ -46,11 +38,18 @@ impl ProofExpr for AndExpr {
         alloc: &'a Bump,
         table: &Table<'a, S>,
     ) -> Column<'a, S> {
+        log::log_memory_usage("Start");
+
         let lhs_column: Column<'a, S> = self.lhs.result_evaluate(alloc, table);
         let rhs_column: Column<'a, S> = self.rhs.result_evaluate(alloc, table);
         let lhs = lhs_column.as_boolean().expect("lhs is not boolean");
         let rhs = rhs_column.as_boolean().expect("rhs is not boolean");
-        Column::Boolean(alloc.alloc_slice_fill_with(table.num_rows(), |i| lhs[i] && rhs[i]))
+        let res =
+            Column::Boolean(alloc.alloc_slice_fill_with(table.num_rows(), |i| lhs[i] && rhs[i]));
+
+        log::log_memory_usage("End");
+
+        res
     }
 
     #[tracing::instrument(name = "AndExpr::prover_evaluate", level = "debug", skip_all)]
@@ -60,6 +59,8 @@ impl ProofExpr for AndExpr {
         alloc: &'a Bump,
         table: &Table<'a, S>,
     ) -> Column<'a, S> {
+        log::log_memory_usage("Start");
+
         let lhs_column: Column<'a, S> = self.lhs.prover_evaluate(builder, alloc, table);
         let rhs_column: Column<'a, S> = self.rhs.prover_evaluate(builder, alloc, table);
         let lhs = lhs_column.as_boolean().expect("lhs is not boolean");
@@ -79,7 +80,11 @@ impl ProofExpr for AndExpr {
                 (-S::one(), vec![Box::new(lhs), Box::new(rhs)]),
             ],
         );
-        Column::Boolean(lhs_and_rhs)
+        let res = Column::Boolean(lhs_and_rhs);
+
+        log::log_memory_usage("End");
+
+        res
     }
 
     fn verifier_evaluate<S: Scalar>(
@@ -92,13 +97,14 @@ impl ProofExpr for AndExpr {
         let rhs = self.rhs.verifier_evaluate(builder, accessor, one_eval)?;
 
         // lhs_and_rhs
-        let lhs_and_rhs = builder.consume_intermediate_mle();
+        let lhs_and_rhs = builder.try_consume_mle_evaluation()?;
 
         // subpolynomial: lhs_and_rhs - lhs * rhs
-        builder.produce_sumcheck_subpolynomial_evaluation(
-            &SumcheckSubpolynomialType::Identity,
+        builder.try_produce_sumcheck_subpolynomial_evaluation(
+            SumcheckSubpolynomialType::Identity,
             lhs_and_rhs - lhs * rhs,
-        );
+            2,
+        )?;
 
         // selection
         Ok(lhs_and_rhs)

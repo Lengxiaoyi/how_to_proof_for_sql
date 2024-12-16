@@ -1,9 +1,12 @@
 use super::{
     blitzar_metadata_table::{create_blitzar_metadata_tables, signed_commits},
-    dynamic_dory_structure::row_and_column_from_index,
     pairings, DynamicDoryCommitment, G1Affine, ProverSetup,
 };
-use crate::base::{commitment::CommittableColumn, if_rayon, slice_ops::slice_cast};
+use crate::{
+    base::{commitment::CommittableColumn, if_rayon, slice_ops::slice_cast},
+    proof_primitive::dynamic_matrix_utils::matrix_structure::row_and_column_from_index,
+    utils::log,
+};
 use blitzar::compute::ElementP2;
 #[cfg(feature = "rayon")]
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -34,6 +37,12 @@ pub(super) fn compute_dynamic_dory_commitments(
     offset: usize,
     setup: &ProverSetup,
 ) -> Vec<DynamicDoryCommitment> {
+    log::log_memory_usage("Start");
+
+    if committable_columns.is_empty() {
+        return vec![];
+    }
+
     let Gamma_2 = setup.Gamma_2.last().unwrap();
     let (gamma_2_offset, _) = row_and_column_from_index(offset);
 
@@ -63,7 +72,7 @@ pub(super) fn compute_dynamic_dory_commitments(
     let num_commits = signed_sub_commits.len() / committable_columns.len();
 
     // Calculate the dynamic Dory commitments.
-    let span = span!(Level::INFO, "multi_pairing").entered();
+    let span = span!(Level::DEBUG, "multi_pairing").entered();
     let ddc: Vec<DynamicDoryCommitment> = signed_sub_commits
         .is_empty()
         .then_some(vec![
@@ -88,6 +97,8 @@ pub(super) fn compute_dynamic_dory_commitments(
             .collect()
         });
     span.exit();
+
+    log::log_memory_usage("End");
 
     ddc
 }

@@ -7,9 +7,10 @@ use crate::{
         scalar::Scalar,
     },
     sql::{
-        proof::{CountBuilder, FinalRoundBuilder, SumcheckSubpolynomialType, VerificationBuilder},
+        proof::{FinalRoundBuilder, SumcheckSubpolynomialType, VerificationBuilder},
         proof_exprs::multiply_columns,
     },
+    utils::log,
 };
 use alloc::{boxed::Box, vec};
 use bumpalo::Bump;
@@ -30,15 +31,6 @@ impl MultiplyExpr {
 }
 
 impl ProofExpr for MultiplyExpr {
-    fn count(&self, builder: &mut CountBuilder) -> Result<(), ProofError> {
-        self.lhs.count(builder)?;
-        self.rhs.count(builder)?;
-        builder.count_subpolynomials(1);
-        builder.count_intermediate_mles(1);
-        builder.count_degree(3);
-        Ok(())
-    }
-
     fn data_type(&self) -> ColumnType {
         try_multiply_column_types(self.lhs.data_type(), self.rhs.data_type())
             .expect("Failed to multiply column types")
@@ -66,6 +58,8 @@ impl ProofExpr for MultiplyExpr {
         alloc: &'a Bump,
         table: &Table<'a, S>,
     ) -> Column<'a, S> {
+        log::log_memory_usage("Start");
+
         let lhs_column: Column<'a, S> = self.lhs.prover_evaluate(builder, alloc, table);
         let rhs_column: Column<'a, S> = self.rhs.prover_evaluate(builder, alloc, table);
 
@@ -81,7 +75,11 @@ impl ProofExpr for MultiplyExpr {
                 (-S::one(), vec![Box::new(lhs_column), Box::new(rhs_column)]),
             ],
         );
-        Column::Scalar(lhs_times_rhs)
+        let res = Column::Scalar(lhs_times_rhs);
+
+        log::log_memory_usage("End");
+
+        res
     }
 
     fn verifier_evaluate<S: Scalar>(
@@ -94,13 +92,14 @@ impl ProofExpr for MultiplyExpr {
         let rhs = self.rhs.verifier_evaluate(builder, accessor, one_eval)?;
 
         // lhs_times_rhs
-        let lhs_times_rhs = builder.consume_intermediate_mle();
+        let lhs_times_rhs = builder.try_consume_mle_evaluation()?;
 
         // subpolynomial: lhs_times_rhs - lhs * rhs
-        builder.produce_sumcheck_subpolynomial_evaluation(
-            &SumcheckSubpolynomialType::Identity,
+        builder.try_produce_sumcheck_subpolynomial_evaluation(
+            SumcheckSubpolynomialType::Identity,
             lhs_times_rhs - lhs * rhs,
-        );
+            2,
+        )?;
 
         // selection
         Ok(lhs_times_rhs)

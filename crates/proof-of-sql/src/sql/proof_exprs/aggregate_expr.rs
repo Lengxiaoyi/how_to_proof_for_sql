@@ -6,7 +6,8 @@ use crate::{
         proof::ProofError,
         scalar::Scalar,
     },
-    sql::proof::{CountBuilder, FinalRoundBuilder, VerificationBuilder},
+    sql::proof::{FinalRoundBuilder, VerificationBuilder},
+    utils::log,
 };
 use alloc::boxed::Box;
 use bumpalo::Bump;
@@ -30,10 +31,7 @@ impl AggregateExpr {
 }
 
 impl ProofExpr for AggregateExpr {
-    fn count(&self, builder: &mut CountBuilder) -> Result<(), ProofError> {
-        self.expr.count(builder)
-    }
-
+    // Remove the count method
     fn data_type(&self) -> ColumnType {
         match self.op {
             AggregationOperator::Count => ColumnType::BigInt,
@@ -48,7 +46,13 @@ impl ProofExpr for AggregateExpr {
         alloc: &'a Bump,
         table: &Table<'a, S>,
     ) -> Column<'a, S> {
-        self.expr.result_evaluate(alloc, table)
+        log::log_memory_usage("Start");
+
+        let res = self.expr.result_evaluate(alloc, table);
+
+        log::log_memory_usage("End");
+
+        res
     }
 
     #[tracing::instrument(name = "AggregateExpr::prover_evaluate", level = "debug", skip_all)]
@@ -58,7 +62,13 @@ impl ProofExpr for AggregateExpr {
         alloc: &'a Bump,
         table: &Table<'a, S>,
     ) -> Column<'a, S> {
-        self.expr.prover_evaluate(builder, alloc, table)
+        log::log_memory_usage("Start");
+
+        let res = self.expr.prover_evaluate(builder, alloc, table);
+
+        log::log_memory_usage("End");
+
+        res
     }
 
     fn verifier_evaluate<S: Scalar>(

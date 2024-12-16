@@ -8,9 +8,9 @@ use crate::{
         scalar::Scalar,
     },
     sql::proof::{
-        CountBuilder, FinalRoundBuilder, FirstRoundBuilder, ProofPlan, ProverEvaluate,
-        VerificationBuilder,
+        FinalRoundBuilder, FirstRoundBuilder, ProofPlan, ProverEvaluate, VerificationBuilder,
     },
+    utils::log,
 };
 use alloc::vec::Vec;
 use bumpalo::Bump;
@@ -36,10 +36,6 @@ impl EmptyExec {
 }
 
 impl ProofPlan for EmptyExec {
-    fn count(&self, _builder: &mut CountBuilder) -> Result<(), ProofError> {
-        Ok(())
-    }
-
     #[allow(unused_variables)]
     fn verifier_evaluate<S: Scalar>(
         &self,
@@ -75,9 +71,16 @@ impl ProverEvaluate for EmptyExec {
         _alloc: &'a Bump,
         _table_map: &IndexMap<TableRef, Table<'a, S>>,
     ) -> Table<'a, S> {
+        log::log_memory_usage("Start");
+
         // Create an empty table with one row
-        Table::<'a, S>::try_new_with_options(IndexMap::default(), TableOptions::new(Some(1)))
-            .unwrap()
+        let res =
+            Table::<'a, S>::try_new_with_options(IndexMap::default(), TableOptions::new(Some(1)))
+                .unwrap();
+
+        log::log_memory_usage("End");
+
+        res
     }
 
     #[tracing::instrument(name = "EmptyExec::final_round_evaluate", level = "debug", skip_all)]
@@ -88,8 +91,15 @@ impl ProverEvaluate for EmptyExec {
         _alloc: &'a Bump,
         _table_map: &IndexMap<TableRef, Table<'a, S>>,
     ) -> Table<'a, S> {
+        log::log_memory_usage("Start");
+
         // Create an empty table with one row
-        Table::<'a, S>::try_new_with_options(IndexMap::default(), TableOptions::new(Some(1)))
-            .unwrap()
+        let res =
+            Table::<'a, S>::try_new_with_options(IndexMap::default(), TableOptions::new(Some(1)))
+                .unwrap();
+
+        log::log_memory_usage("End");
+
+        res
     }
 }

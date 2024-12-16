@@ -9,15 +9,14 @@ use crate::{
     },
     sql::{
         proof::{
-            CountBuilder, FinalRoundBuilder, FirstRoundBuilder, ProofPlan, ProverEvaluate,
-            VerificationBuilder,
+            FinalRoundBuilder, FirstRoundBuilder, ProofPlan, ProverEvaluate, VerificationBuilder,
         },
         proof_exprs::{AliasedDynProofExpr, ProofExpr, TableExpr},
     },
+    utils::log,
 };
 use alloc::vec::Vec;
 use bumpalo::Bump;
-use core::iter::repeat_with;
 use serde::{Deserialize, Serialize};
 
 /// Provable expressions for queries of the form
@@ -41,14 +40,6 @@ impl ProjectionExec {
 }
 
 impl ProofPlan for ProjectionExec {
-    fn count(&self, builder: &mut CountBuilder) -> Result<(), ProofError> {
-        for aliased_expr in &self.aliased_results {
-            aliased_expr.expr.count(builder)?;
-            builder.count_intermediate_mles(1);
-        }
-        Ok(())
-    }
-
     #[allow(unused_variables)]
     fn verifier_evaluate<S: Scalar>(
         &self,
@@ -69,9 +60,7 @@ impl ProofPlan for ProjectionExec {
                     .verifier_evaluate(builder, accessor, one_eval)
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let column_evals = repeat_with(|| builder.consume_intermediate_mle())
-            .take(self.aliased_results.len())
-            .collect::<Vec<_>>();
+        let column_evals = builder.try_consume_mle_evaluations(self.aliased_results.len())?;
         Ok(TableEvaluation::new(column_evals, one_eval))
     }
 
@@ -107,10 +96,12 @@ impl ProverEvaluate for ProjectionExec {
         alloc: &'a Bump,
         table_map: &IndexMap<TableRef, Table<'a, S>>,
     ) -> Table<'a, S> {
+        log::log_memory_usage("Start");
+
         let table = table_map
             .get(&self.table.table_ref)
             .expect("Table not found");
-        Table::<'a, S>::try_from_iter_with_options(
+        let res = Table::<'a, S>::try_from_iter_with_options(
             self.aliased_results.iter().map(|aliased_expr| {
                 (
                     aliased_expr.alias,
@@ -119,7 +110,11 @@ impl ProverEvaluate for ProjectionExec {
             }),
             TableOptions::new(Some(table.num_rows())),
         )
-        .expect("Failed to create table from iterator")
+        .expect("Failed to create table from iterator");
+
+        log::log_memory_usage("End");
+
+        res
     }
 
     #[tracing::instrument(
@@ -134,6 +129,8 @@ impl ProverEvaluate for ProjectionExec {
         alloc: &'a Bump,
         table_map: &IndexMap<TableRef, Table<'a, S>>,
     ) -> Table<'a, S> {
+        log::log_memory_usage("Start");
+
         let table = table_map
             .get(&self.table.table_ref)
             .expect("Table not found");
@@ -152,6 +149,9 @@ impl ProverEvaluate for ProjectionExec {
         for column in res.columns().copied() {
             builder.produce_intermediate_mle(column);
         }
+
+        log::log_memory_usage("End");
+
         res
     }
 }

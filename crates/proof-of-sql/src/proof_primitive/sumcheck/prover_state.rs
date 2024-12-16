@@ -4,12 +4,11 @@ use crate::base::polynomial::CompositePolynomial;
  *
  * See third_party/license/arkworks.LICENSE
  */
-use crate::base::scalar::Scalar;
+use crate::{base::scalar::Scalar, utils::log};
 use alloc::vec::Vec;
 
+#[derive(Debug)]
 pub struct ProverState<S: Scalar> {
-    /// sampled randomness given by the verifier
-    pub randomness: Vec<S>,
     /// Stores the list of products that is meant to be added together. Each multiplicand is represented by
     /// the index in `flattened_ml_extensions`
     pub list_of_products: Vec<(S, Vec<usize>)>,
@@ -21,8 +20,25 @@ pub struct ProverState<S: Scalar> {
 }
 
 impl<S: Scalar> ProverState<S> {
+    pub fn new(
+        list_of_products: Vec<(S, Vec<usize>)>,
+        flattened_ml_extensions: Vec<Vec<S>>,
+        num_vars: usize,
+        max_multiplicands: usize,
+    ) -> Self {
+        ProverState {
+            list_of_products,
+            flattened_ml_extensions,
+            num_vars,
+            max_multiplicands,
+            round: 0,
+        }
+    }
+
     #[tracing::instrument(name = "ProverState::create", level = "debug", skip_all)]
     pub fn create(polynomial: &CompositePolynomial<S>) -> Self {
+        log::log_memory_usage("Start");
+
         assert!(
             polynomial.num_variables != 0,
             "Attempt to prove a constant."
@@ -35,13 +51,13 @@ impl<S: Scalar> ProverState<S> {
             .map(|x| x.as_ref().clone())
             .collect();
 
-        ProverState {
-            randomness: Vec::with_capacity(polynomial.num_variables),
-            list_of_products: polynomial.products.clone(),
+        log::log_memory_usage("End");
+
+        ProverState::new(
+            polynomial.products.clone(),
             flattened_ml_extensions,
-            num_vars: polynomial.num_variables,
-            max_multiplicands: polynomial.max_multiplicands,
-            round: 0,
-        }
+            polynomial.num_variables,
+            polynomial.max_multiplicands,
+        )
     }
 }
