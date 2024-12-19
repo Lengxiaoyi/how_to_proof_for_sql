@@ -32,9 +32,10 @@ use arrow::{
 };
 use proof_of_sql_parser::{
     posql_time::{PoSQLTimeUnit, PoSQLTimeZone, PoSQLTimestampError},
-    Identifier, ParseError,
+    ParseError,
 };
 use snafu::Snafu;
+use sqlparser::ast::Ident;
 
 #[derive(Snafu, Debug)]
 #[non_exhaustive]
@@ -48,10 +49,10 @@ pub enum OwnedArrowConversionError {
         /// The unsupported datatype
         datatype: DataType,
     },
-    /// This error occurs when trying to convert from a record batch with duplicate identifiers (e.g. `"a"` and `"A"`).
-    #[snafu(display("conversion resulted in duplicate identifiers"))]
-    DuplicateIdentifiers,
-    /// This error occurs when convering from a record batch name to an identifier fails. (Which may my impossible.)
+    /// This error occurs when trying to convert from a record batch with duplicate idents(e.g. `"a"` and `"A"`).
+    #[snafu(display("conversion resulted in duplicate idents"))]
+    DuplicateIdents,
+    /// This error occurs when convering from a record batch name to an idents fails. (Which may my impossible.)
     #[snafu(transparent)]
     FieldParseFail {
         /// The underlying source error
@@ -123,7 +124,9 @@ impl<S: Scalar> TryFrom<OwnedTable<S>> for RecordBatch {
                 value
                     .into_inner()
                     .into_iter()
-                    .map(|(identifier, owned_column)| (identifier, ArrayRef::from(owned_column))),
+                    .map(|(identifier, owned_column)| {
+                        (identifier.value, ArrayRef::from(owned_column))
+                    }),
             )
         }
     }
@@ -300,7 +303,7 @@ impl<S: Scalar> TryFrom<RecordBatch> for OwnedTable<S> {
             .zip(value.columns())
             .map(|(field, array_ref)| {
                 let owned_column = OwnedColumn::try_from(array_ref)?;
-                let identifier = Identifier::try_new(field.name())?; //This may always succeed.
+                let identifier = Ident::new(field.name());
                 Ok((identifier, owned_column))
             })
             .collect();
@@ -308,7 +311,7 @@ impl<S: Scalar> TryFrom<RecordBatch> for OwnedTable<S> {
         if num_columns == owned_table.num_columns() {
             Ok(owned_table)
         } else {
-            Err(OwnedArrowConversionError::DuplicateIdentifiers)
+            Err(OwnedArrowConversionError::DuplicateIdents)
         }
     }
 }

@@ -1,6 +1,6 @@
 use super::{
     committable_column::CommittableColumn, AppendColumnCommitmentsError, ColumnCommitments,
-    ColumnCommitmentsMismatch, Commitment, DuplicateIdentifiers,
+    ColumnCommitmentsMismatch, Commitment, DuplicateIdents,
 };
 use crate::base::{
     database::{ColumnField, CommitmentAccessor, OwnedTable, TableRef},
@@ -8,9 +8,9 @@ use crate::base::{
 };
 use alloc::vec::Vec;
 use core::ops::Range;
-use proof_of_sql_parser::Identifier;
 use serde::{Deserialize, Serialize};
 use snafu::Snafu;
+use sqlparser::ast::Ident;
 
 /// Cannot create a [`TableCommitment`] with a negative range.
 #[derive(Debug, Snafu)]
@@ -31,11 +31,11 @@ pub enum TableCommitmentFromColumnsError {
         /// The underlying source error
         source: MixedLengthColumns,
     },
-    /// Cannot construct [`TableCommitment`] from columns with duplicate identifiers.
+    /// Cannot construct [`TableCommitment`] from columns with duplicate idents.
     #[snafu(transparent)]
-    DuplicateIdentifiers {
+    DuplicateIdents {
         /// The underlying source error
-        source: DuplicateIdentifiers,
+        source: DuplicateIdents,
     },
 }
 
@@ -158,20 +158,19 @@ impl<C: Commitment> TableCommitment<C> {
 
     /// Returns a [`TableCommitment`] to the provided columns with the given row offset.
     ///
-    /// Provided columns must have the same length and no duplicate identifiers.
+    /// Provided columns must have the same length and no duplicate idents.
     pub fn try_from_columns_with_offset<'a, COL>(
-        columns: impl IntoIterator<Item = (&'a Identifier, COL)>,
+        columns: impl IntoIterator<Item = (&'a Ident, COL)>,
         offset: usize,
         setup: &C::PublicSetup<'_>,
     ) -> Result<TableCommitment<C>, TableCommitmentFromColumnsError>
     where
         COL: Into<CommittableColumn<'a>>,
     {
-        let (identifiers, committable_columns): (Vec<&Identifier>, Vec<CommittableColumn>) =
-            columns
-                .into_iter()
-                .map(|(identifier, column)| (identifier, column.into()))
-                .unzip();
+        let (identifiers, committable_columns): (Vec<&Ident>, Vec<CommittableColumn>) = columns
+            .into_iter()
+            .map(|(identifier, column)| (identifier, column.into()))
+            .unzip();
 
         let num_rows = num_rows_of_columns(&committable_columns)?;
 
@@ -190,7 +189,7 @@ impl<C: Commitment> TableCommitment<C> {
     /// Returns a [`TableCommitment`] to the provided table with the given row offset.
     #[allow(
         clippy::missing_panics_doc,
-        reason = "since OwnedTables cannot have columns of mixed length or duplicate identifiers"
+        reason = "since OwnedTables cannot have columns of mixed length or duplicate idents"
     )]
     pub fn from_owned_table_with_offset<S>(
         owned_table: &OwnedTable<S>,
@@ -201,7 +200,7 @@ impl<C: Commitment> TableCommitment<C> {
         S: Scalar,
     {
         Self::try_from_columns_with_offset(owned_table.inner_table(), offset, setup)
-            .expect("OwnedTables cannot have columns of mixed length or duplicate identifiers")
+            .expect("OwnedTables cannot have columns of mixed length or duplicate idents")
     }
 
     /// Append rows of data from the provided columns to the existing [`TableCommitment`].
@@ -211,17 +210,16 @@ impl<C: Commitment> TableCommitment<C> {
     /// Will error on a variety of mismatches, or if the provided columns have mixed length.
     pub fn try_append_rows<'a, COL>(
         &mut self,
-        columns: impl IntoIterator<Item = (&'a Identifier, COL)>,
+        columns: impl IntoIterator<Item = (&'a Ident, COL)>,
         setup: &C::PublicSetup<'_>,
     ) -> Result<(), AppendTableCommitmentError>
     where
         COL: Into<CommittableColumn<'a>>,
     {
-        let (identifiers, committable_columns): (Vec<&Identifier>, Vec<CommittableColumn>) =
-            columns
-                .into_iter()
-                .map(|(identifier, column)| (identifier, column.into()))
-                .unzip();
+        let (identifiers, committable_columns): (Vec<&Ident>, Vec<CommittableColumn>) = columns
+            .into_iter()
+            .map(|(identifier, column)| (identifier, column.into()))
+            .unzip();
 
         let num_rows = num_rows_of_columns(&committable_columns)?;
 
@@ -240,7 +238,7 @@ impl<C: Commitment> TableCommitment<C> {
     /// Will error on a variety of mismatches.
     /// See [`ColumnCommitmentsMismatch`] for an enumeration of these errors.
     /// # Panics
-    /// Panics if `owned_table` has duplicate identifiers.
+    /// Panics if `owned_table` has duplicate idents.
     /// Panics if `owned_table` contains columns of mixed length.
     pub fn append_owned_table<S>(
         &mut self,
@@ -254,8 +252,8 @@ impl<C: Commitment> TableCommitment<C> {
             .map_err(|e| match e {
                 AppendTableCommitmentError::AppendColumnCommitments { source: e } => match e {
                     AppendColumnCommitmentsError::Mismatch { source: e } => e,
-                    AppendColumnCommitmentsError::DuplicateIdentifiers { .. } => {
-                        panic!("OwnedTables cannot have duplicate identifiers");
+                    AppendColumnCommitmentsError::DuplicateIdents { .. } => {
+                        panic!("OwnedTables cannot have duplicate idents");
                     }
                 },
                 AppendTableCommitmentError::MixedLengthColumns { .. } => {
@@ -266,10 +264,10 @@ impl<C: Commitment> TableCommitment<C> {
 
     /// Add new columns to this [`TableCommitment`].
     ///
-    /// Columns must have the same length as the current commitment and no duplicate identifiers.
+    /// Columns must have the same length as the current commitment and no duplicate idents.
     pub fn try_extend_columns<'a, COL>(
         &mut self,
-        columns: impl IntoIterator<Item = (&'a Identifier, COL)>,
+        columns: impl IntoIterator<Item = (&'a Ident, COL)>,
         setup: &C::PublicSetup<'_>,
     ) -> Result<(), TableCommitmentFromColumnsError>
     where
@@ -277,11 +275,10 @@ impl<C: Commitment> TableCommitment<C> {
     {
         let num_rows = self.range.len();
 
-        let (identifiers, committable_columns): (Vec<&Identifier>, Vec<CommittableColumn>) =
-            columns
-                .into_iter()
-                .map(|(identifier, column)| (identifier, column.into()))
-                .unzip();
+        let (identifiers, committable_columns): (Vec<&Ident>, Vec<CommittableColumn>) = columns
+            .into_iter()
+            .map(|(identifier, column)| (identifier, column.into()))
+            .unzip();
 
         let num_rows_of_new_columns = num_rows_of_columns(&committable_columns)?;
         if num_rows_of_new_columns != num_rows {
@@ -402,8 +399,7 @@ mod tests {
     #[test]
     fn we_can_construct_table_commitment_from_columns_and_identifiers() {
         // no-columns case
-        let mut empty_columns_iter: IndexMap<Identifier, OwnedColumn<TestScalar>> =
-            IndexMap::default();
+        let mut empty_columns_iter: IndexMap<Ident, OwnedColumn<TestScalar>> = IndexMap::default();
         let empty_table_commitment =
             TableCommitment::<NaiveCommitment>::try_from_columns_with_offset(
                 &empty_columns_iter,
@@ -420,7 +416,7 @@ mod tests {
         assert_eq!(empty_table_commitment.num_rows(), 0);
 
         // no-rows case
-        empty_columns_iter.insert("column_a".parse().unwrap(), OwnedColumn::BigInt(vec![]));
+        empty_columns_iter.insert("column_a".into(), OwnedColumn::BigInt(vec![]));
         let empty_table_commitment =
             TableCommitment::<NaiveCommitment>::try_from_columns_with_offset(
                 &empty_columns_iter,
@@ -467,9 +463,9 @@ mod tests {
 
     #[test]
     fn we_cannot_construct_table_commitment_from_duplicate_identifiers() {
-        let duplicate_identifier_a = "duplicate_identifier_a".parse().unwrap();
-        let duplicate_identifier_b = "duplicate_identifier_b".parse().unwrap();
-        let unique_identifier = "unique_identifier".parse().unwrap();
+        let duplicate_identifier_a = "duplicate_identifier_a".into();
+        let duplicate_identifier_b = "duplicate_identifier_b".into();
+        let unique_identifier = "unique_identifier".into();
 
         let empty_column = OwnedColumn::<TestScalar>::BigInt(vec![]);
 
@@ -484,7 +480,7 @@ mod tests {
         );
         assert!(matches!(
             from_columns_result,
-            Err(TableCommitmentFromColumnsError::DuplicateIdentifiers { .. })
+            Err(TableCommitmentFromColumnsError::DuplicateIdents { .. })
         ));
 
         let mut table_commitment =
@@ -503,7 +499,7 @@ mod tests {
             table_commitment.try_extend_columns([(&duplicate_identifier_a, &empty_column)], &());
         assert!(matches!(
             extend_columns_result,
-            Err(TableCommitmentFromColumnsError::DuplicateIdentifiers { .. })
+            Err(TableCommitmentFromColumnsError::DuplicateIdents { .. })
         ));
 
         let extend_columns_result = table_commitment.try_extend_columns(
@@ -515,7 +511,7 @@ mod tests {
         );
         assert!(matches!(
             extend_columns_result,
-            Err(TableCommitmentFromColumnsError::DuplicateIdentifiers { .. })
+            Err(TableCommitmentFromColumnsError::DuplicateIdents { .. })
         ));
 
         // make sure the commitment wasn't mutated
@@ -525,9 +521,9 @@ mod tests {
 
     #[test]
     fn we_cannot_construct_table_commitment_from_columns_of_mixed_length() {
-        let column_id_a = "column_a".parse().unwrap();
-        let column_id_b = "column_b".parse().unwrap();
-        let column_id_c = "column_c".parse().unwrap();
+        let column_id_a = "column_a".into();
+        let column_id_b = "column_b".into();
+        let column_id_c = "column_c".into();
 
         let one_row_column = OwnedColumn::<TestScalar>::BigInt(vec![1]);
         let two_row_column = OwnedColumn::<TestScalar>::BigInt(vec![1, 2]);
@@ -580,19 +576,19 @@ mod tests {
 
     #[test]
     fn we_can_append_rows_to_table_commitment() {
-        let bigint_id: Identifier = "bigint_column".parse().unwrap();
+        let bigint_id: Ident = "bigint_column".into();
         let bigint_data = [1i64, 5, -5, 0, 10];
 
-        let varchar_id: Identifier = "varchar_column".parse().unwrap();
+        let varchar_id: Ident = "varchar_column".into();
         let varchar_data = ["Lorem", "ipsum", "dolor", "sit", "amet"];
 
-        let scalar_id: Identifier = "scalar_column".parse().unwrap();
+        let scalar_id: Ident = "scalar_column".into();
         let scalar_data = [1000, 2000, 3000, -1000, 0];
 
         let initial_columns: OwnedTable<TestScalar> = owned_table([
-            bigint(bigint_id, bigint_data[..2].to_vec()),
-            varchar(varchar_id, varchar_data[..2].to_vec()),
-            scalar(scalar_id, scalar_data[..2].to_vec()),
+            bigint(bigint_id.value.as_str(), bigint_data[..2].to_vec()),
+            varchar(varchar_id.value.as_str(), varchar_data[..2].to_vec()),
+            scalar(scalar_id.value.as_str(), scalar_data[..2].to_vec()),
         ]);
 
         let mut table_commitment =
@@ -605,9 +601,9 @@ mod tests {
         let mut table_commitment_clone = table_commitment.clone();
 
         let append_columns: OwnedTable<TestScalar> = owned_table([
-            bigint(bigint_id, bigint_data[2..].to_vec()),
-            varchar(varchar_id, varchar_data[2..].to_vec()),
-            scalar(scalar_id, scalar_data[2..].to_vec()),
+            bigint(bigint_id.value.as_str(), bigint_data[2..].to_vec()),
+            varchar(varchar_id.value.as_str(), varchar_data[2..].to_vec()),
+            scalar(scalar_id.value.as_str(), scalar_data[2..].to_vec()),
         ]);
 
         table_commitment
@@ -615,9 +611,9 @@ mod tests {
             .unwrap();
 
         let total_columns: OwnedTable<TestScalar> = owned_table([
-            bigint(bigint_id, bigint_data),
-            varchar(varchar_id, varchar_data),
-            scalar(scalar_id, scalar_data),
+            bigint(bigint_id.value.as_str(), bigint_data),
+            varchar(varchar_id.value.as_str(), varchar_data),
+            scalar(scalar_id.value.as_str(), scalar_data),
         ]);
 
         let expected_table_commitment =
@@ -668,8 +664,8 @@ mod tests {
 
     #[test]
     fn we_cannot_append_columns_with_duplicate_identifiers_to_table_commitment() {
-        let column_id_a = "column_a".parse().unwrap();
-        let column_id_b = "column_b".parse().unwrap();
+        let column_id_a = "column_a".into();
+        let column_id_b = "column_b".into();
 
         let column_data = OwnedColumn::<TestScalar>::BigInt(vec![1, 2, 3]);
 
@@ -693,7 +689,7 @@ mod tests {
         assert!(matches!(
             append_column_result,
             Err(AppendTableCommitmentError::AppendColumnCommitments {
-                source: AppendColumnCommitmentsError::DuplicateIdentifiers { .. }
+                source: AppendColumnCommitmentsError::DuplicateIdents { .. }
             })
         ));
 
@@ -705,11 +701,14 @@ mod tests {
     #[allow(clippy::similar_names)]
     #[test]
     fn we_cannot_append_columns_of_mixed_length_to_table_commitment() {
-        let column_id_a: Identifier = "column_a".parse().unwrap();
-        let column_id_b: Identifier = "column_b".parse().unwrap();
+        let column_id_a: Ident = "column_a".into();
+        let column_id_b: Ident = "column_b".into();
         let base_table: OwnedTable<TestScalar> = owned_table([
-            bigint(column_id_a, [1, 2, 3, 4]),
-            varchar(column_id_b, ["Lorem", "ipsum", "dolor", "sit"]),
+            bigint(column_id_a.value.as_str(), [1, 2, 3, 4]),
+            varchar(
+                column_id_b.value.as_str(),
+                ["Lorem", "ipsum", "dolor", "sit"],
+            ),
         ]);
 
         let mut table_commitment =
@@ -744,18 +743,18 @@ mod tests {
 
     #[test]
     fn we_can_extend_columns_to_table_commitment() {
-        let bigint_id: Identifier = "bigint_column".parse().unwrap();
+        let bigint_id: Ident = "bigint_column".into();
         let bigint_data = [1i64, 5, -5, 0, 10];
 
-        let varchar_id: Identifier = "varchar_column".parse().unwrap();
+        let varchar_id: Ident = "varchar_column".into();
         let varchar_data = ["Lorem", "ipsum", "dolor", "sit", "amet"];
 
-        let scalar_id: Identifier = "scalar_column".parse().unwrap();
+        let scalar_id: Ident = "scalar_column".into();
         let scalar_data = [1000, 2000, 3000, -1000, 0];
 
         let initial_columns: OwnedTable<TestScalar> = owned_table([
-            bigint(bigint_id, bigint_data),
-            varchar(varchar_id, varchar_data),
+            bigint(bigint_id.value.as_str(), bigint_data),
+            varchar(varchar_id.value.as_str(), varchar_data),
         ]);
         let mut table_commitment =
             TableCommitment::<NaiveCommitment>::try_from_columns_with_offset(
@@ -765,15 +764,16 @@ mod tests {
             )
             .unwrap();
 
-        let new_columns = owned_table::<TestScalar>([scalar(scalar_id, scalar_data)]);
+        let new_columns =
+            owned_table::<TestScalar>([scalar(scalar_id.value.as_str(), scalar_data)]);
         table_commitment
             .try_extend_columns(new_columns.inner_table(), &())
             .unwrap();
 
         let expected_columns = owned_table::<TestScalar>([
-            bigint(bigint_id, bigint_data),
-            varchar(varchar_id, varchar_data),
-            scalar(scalar_id, scalar_data),
+            bigint(bigint_id.value.as_str(), bigint_data),
+            varchar(varchar_id.value.as_str(), varchar_data),
+            scalar(scalar_id.value.as_str(), scalar_data),
         ]);
         let expected_table_commitment =
             TableCommitment::try_from_columns_with_offset(expected_columns.inner_table(), 2, &())
@@ -784,19 +784,19 @@ mod tests {
 
     #[test]
     fn we_can_add_table_commitments() {
-        let bigint_id: Identifier = "bigint_column".parse().unwrap();
+        let bigint_id: Ident = "bigint_column".into();
         let bigint_data = [1i64, 5, -5, 0, 10];
 
-        let varchar_id: Identifier = "varchar_column".parse().unwrap();
+        let varchar_id: Ident = "varchar_column".into();
         let varchar_data = ["Lorem", "ipsum", "dolor", "sit", "amet"];
 
-        let scalar_id: Identifier = "scalar_column".parse().unwrap();
+        let scalar_id: Ident = "scalar_column".into();
         let scalar_data = [1000, 2000, 3000, -1000, 0];
 
         let columns_a: OwnedTable<TestScalar> = owned_table([
-            bigint(bigint_id, bigint_data[..2].to_vec()),
-            varchar(varchar_id, varchar_data[..2].to_vec()),
-            scalar(scalar_id, scalar_data[..2].to_vec()),
+            bigint(bigint_id.value.as_str(), bigint_data[..2].to_vec()),
+            varchar(varchar_id.value.as_str(), varchar_data[..2].to_vec()),
+            scalar(scalar_id.value.as_str(), scalar_data[..2].to_vec()),
         ]);
 
         let table_commitment_a = TableCommitment::<NaiveCommitment>::try_from_columns_with_offset(
@@ -807,17 +807,17 @@ mod tests {
         .unwrap();
 
         let columns_b: OwnedTable<TestScalar> = owned_table([
-            bigint(bigint_id, bigint_data[2..].to_vec()),
-            varchar(varchar_id, varchar_data[2..].to_vec()),
-            scalar(scalar_id, scalar_data[2..].to_vec()),
+            bigint(bigint_id.value.as_str(), bigint_data[2..].to_vec()),
+            varchar(varchar_id.value.as_str(), varchar_data[2..].to_vec()),
+            scalar(scalar_id.value.as_str(), scalar_data[2..].to_vec()),
         ]);
         let table_commitment_b =
             TableCommitment::try_from_columns_with_offset(columns_b.inner_table(), 2, &()).unwrap();
 
         let columns_sum: OwnedTable<TestScalar> = owned_table([
-            bigint(bigint_id, bigint_data),
-            varchar(varchar_id, varchar_data),
-            scalar(scalar_id, scalar_data),
+            bigint(bigint_id.value.as_str(), bigint_data),
+            varchar(varchar_id.value.as_str(), varchar_data),
+            scalar(scalar_id.value.as_str(), scalar_data),
         ]);
         let table_commitment_sum =
             TableCommitment::try_from_columns_with_offset(columns_sum.inner_table(), 0, &())
@@ -929,19 +929,19 @@ mod tests {
 
     #[test]
     fn we_can_sub_table_commitments() {
-        let bigint_id: Identifier = "bigint_column".parse().unwrap();
+        let bigint_id: Ident = "bigint_column".into();
         let bigint_data = [1i64, 5, -5, 0, 10];
 
-        let varchar_id: Identifier = "varchar_column".parse().unwrap();
+        let varchar_id: Ident = "varchar_column".into();
         let varchar_data = ["Lorem", "ipsum", "dolor", "sit", "amet"];
 
-        let scalar_id: Identifier = "scalar_column".parse().unwrap();
+        let scalar_id: Ident = "scalar_column".into();
         let scalar_data = [1000, 2000, 3000, -1000, 0];
 
         let columns_low: OwnedTable<TestScalar> = owned_table([
-            bigint(bigint_id, bigint_data[..2].to_vec()),
-            varchar(varchar_id, varchar_data[..2].to_vec()),
-            scalar(scalar_id, scalar_data[..2].to_vec()),
+            bigint(bigint_id.value.as_str(), bigint_data[..2].to_vec()),
+            varchar(varchar_id.value.as_str(), varchar_data[..2].to_vec()),
+            scalar(scalar_id.value.as_str(), scalar_data[..2].to_vec()),
         ]);
         let table_commitment_low =
             TableCommitment::<NaiveCommitment>::try_from_columns_with_offset(
@@ -952,18 +952,18 @@ mod tests {
             .unwrap();
 
         let columns_high: OwnedTable<TestScalar> = owned_table([
-            bigint(bigint_id, bigint_data[2..].to_vec()),
-            varchar(varchar_id, varchar_data[2..].to_vec()),
-            scalar(scalar_id, scalar_data[2..].to_vec()),
+            bigint(bigint_id.value.as_str(), bigint_data[2..].to_vec()),
+            varchar(varchar_id.value.as_str(), varchar_data[2..].to_vec()),
+            scalar(scalar_id.value.as_str(), scalar_data[2..].to_vec()),
         ]);
         let table_commitment_high =
             TableCommitment::try_from_columns_with_offset(columns_high.inner_table(), 2, &())
                 .unwrap();
 
         let columns_all: OwnedTable<TestScalar> = owned_table([
-            bigint(bigint_id, bigint_data),
-            varchar(varchar_id, varchar_data),
-            scalar(scalar_id, scalar_data),
+            bigint(bigint_id.value.as_str(), bigint_data),
+            varchar(varchar_id.value.as_str(), varchar_data),
+            scalar(scalar_id.value.as_str(), scalar_data),
         ]);
         let table_commitment_all =
             TableCommitment::try_from_columns_with_offset(columns_all.inner_table(), 0, &())
@@ -1019,25 +1019,25 @@ mod tests {
 
     #[test]
     fn we_cannot_sub_noncontiguous_table_commitments() {
-        let bigint_id: Identifier = "bigint_column".parse().unwrap();
+        let bigint_id: Ident = "bigint_column".into();
         let bigint_data = [1i64, 5, -5, 0, 10];
 
-        let varchar_id: Identifier = "varchar_column".parse().unwrap();
+        let varchar_id: Ident = "varchar_column".into();
         let varchar_data = ["Lorem", "ipsum", "dolor", "sit", "amet"];
 
-        let scalar_id: Identifier = "scalar_column".parse().unwrap();
+        let scalar_id: Ident = "scalar_column".into();
         let scalar_data = [1000, 2000, 3000, -1000, 0];
 
         let columns_minuend: OwnedTable<TestScalar> = owned_table([
-            bigint(bigint_id, bigint_data[..].to_vec()),
-            varchar(varchar_id, varchar_data[..].to_vec()),
-            scalar(scalar_id, scalar_data[..].to_vec()),
+            bigint(bigint_id.value.as_str(), bigint_data[..].to_vec()),
+            varchar(varchar_id.value.as_str(), varchar_data[..].to_vec()),
+            scalar(scalar_id.value.as_str(), scalar_data[..].to_vec()),
         ]);
 
         let columns_subtrahend: OwnedTable<TestScalar> = owned_table([
-            bigint(bigint_id, bigint_data[..2].to_vec()),
-            varchar(varchar_id, varchar_data[..2].to_vec()),
-            scalar(scalar_id, scalar_data[..2].to_vec()),
+            bigint(bigint_id.value.as_str(), bigint_data[..2].to_vec()),
+            varchar(varchar_id.value.as_str(), varchar_data[..2].to_vec()),
+            scalar(scalar_id.value.as_str(), scalar_data[..2].to_vec()),
         ]);
 
         let minuend_table_commitment =
@@ -1091,19 +1091,19 @@ mod tests {
 
     #[test]
     fn we_cannot_sub_commitments_with_negative_difference() {
-        let bigint_id: Identifier = "bigint_column".parse().unwrap();
+        let bigint_id: Ident = "bigint_column".into();
         let bigint_data = [1i64, 5, -5, 0, 10];
 
-        let varchar_id: Identifier = "varchar_column".parse().unwrap();
+        let varchar_id: Ident = "varchar_column".into();
         let varchar_data = ["Lorem", "ipsum", "dolor", "sit", "amet"];
 
-        let scalar_id: Identifier = "scalar_column".parse().unwrap();
+        let scalar_id: Ident = "scalar_column".into();
         let scalar_data = [1000, 2000, 3000, -1000, 0];
 
         let columns_low: OwnedTable<TestScalar> = owned_table([
-            bigint(bigint_id, bigint_data[..2].to_vec()),
-            varchar(varchar_id, varchar_data[..2].to_vec()),
-            scalar(scalar_id, scalar_data[..2].to_vec()),
+            bigint(bigint_id.value.as_str(), bigint_data[..2].to_vec()),
+            varchar(varchar_id.value.as_str(), varchar_data[..2].to_vec()),
+            scalar(scalar_id.value.as_str(), scalar_data[..2].to_vec()),
         ]);
         let table_commitment_low =
             TableCommitment::<NaiveCommitment>::try_from_columns_with_offset(
@@ -1114,18 +1114,18 @@ mod tests {
             .unwrap();
 
         let columns_high: OwnedTable<TestScalar> = owned_table([
-            bigint(bigint_id, bigint_data[2..].to_vec()),
-            varchar(varchar_id, varchar_data[2..].to_vec()),
-            scalar(scalar_id, scalar_data[2..].to_vec()),
+            bigint(bigint_id.value.as_str(), bigint_data[2..].to_vec()),
+            varchar(varchar_id.value.as_str(), varchar_data[2..].to_vec()),
+            scalar(scalar_id.value.as_str(), scalar_data[2..].to_vec()),
         ]);
         let table_commitment_high =
             TableCommitment::try_from_columns_with_offset(columns_high.inner_table(), 2, &())
                 .unwrap();
 
         let columns_all: OwnedTable<TestScalar> = owned_table([
-            bigint(bigint_id, bigint_data),
-            varchar(varchar_id, varchar_data),
-            scalar(scalar_id, scalar_data),
+            bigint(bigint_id.value.as_str(), bigint_data),
+            varchar(varchar_id.value.as_str(), varchar_data),
+            scalar(scalar_id.value.as_str(), scalar_data),
         ]);
         let table_commitment_all =
             TableCommitment::try_from_columns_with_offset(columns_all.inner_table(), 0, &())
@@ -1158,12 +1158,9 @@ mod tests {
         let b_scals = ["1".into(), "2".into(), "3".into()];
 
         let columns = [
+            (&"a".into(), &Column::<TestScalar>::BigInt(&[1, 2, 3])),
             (
-                &"a".parse().unwrap(),
-                &Column::<TestScalar>::BigInt(&[1, 2, 3]),
-            ),
-            (
-                &"b".parse().unwrap(),
+                &"b".into(),
                 &Column::<TestScalar>::VarChar((&["1", "2", "3"], &b_scals)),
             ),
         ];
@@ -1185,12 +1182,9 @@ mod tests {
         let b_scals2 = ["4".into(), "5".into(), "6".into()];
 
         let columns2 = [
+            (&"a".into(), &Column::<TestScalar>::BigInt(&[4, 5, 6])),
             (
-                &"a".parse().unwrap(),
-                &Column::<TestScalar>::BigInt(&[4, 5, 6]),
-            ),
-            (
-                &"b".parse().unwrap(),
+                &"b".into(),
                 &Column::<TestScalar>::VarChar((&["4", "5", "6"], &b_scals2)),
             ),
         ];

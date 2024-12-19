@@ -25,7 +25,8 @@ use proof_of_sql::{
     },
     sql::{parse::QueryExpr, proof::VerifiableQueryResult},
 };
-use proof_of_sql_parser::{Identifier, SelectStatement};
+use proof_of_sql_parser::SelectStatement;
+use sqlparser::ast::Ident;
 use std::{
     fs,
     io::{prelude::Write, stdout},
@@ -78,7 +79,7 @@ enum Commands {
         table: TableRef,
         /// The comma delimited column names of the table.
         #[arg(short, long, value_parser, num_args = 0.., value_delimiter = ',')]
-        columns: Vec<Identifier>,
+        columns: Vec<Ident>,
         /// The comma delimited data types of the columns.
         #[arg(short, long, value_parser, num_args = 0.., value_delimiter = ',')]
         data_types: Vec<CsvDataType>,
@@ -175,7 +176,9 @@ fn main() {
                 columns
                     .iter()
                     .zip_eq(data_types.iter())
-                    .map(|(name, data_type)| Field::new(name.as_str(), data_type.into(), false))
+                    .map(|(name, data_type)| {
+                        Field::new(name.value.as_str(), data_type.into(), false)
+                    })
                     .collect::<Vec<_>>(),
             );
             let batch = RecordBatch::new_empty(Arc::new(schema));
@@ -203,7 +206,7 @@ fn main() {
                 commit_accessor
                     .lookup_schema(table_name)
                     .iter()
-                    .map(|(i, t)| Field::new(i.as_str(), t.into(), false))
+                    .map(|(i, t)| Field::new(i.value.as_str(), t.into(), false))
                     .collect::<Vec<_>>(),
             );
             let append_batch =
@@ -233,15 +236,14 @@ fn main() {
                     commit_accessor
                         .lookup_schema(table)
                         .iter()
-                        .map(|(i, t)| Field::new(i.as_str(), t.into(), false))
+                        .map(|(i, t)| Field::new(i.value.as_str(), t.into(), false))
                         .collect::<Vec<_>>(),
                 );
                 csv_accessor
                     .load_table(table, schema)
                     .expect("Failed to load table");
             }
-            let query =
-                QueryExpr::try_new(query, "example".parse().unwrap(), &commit_accessor).unwrap();
+            let query = QueryExpr::try_new(query, "example".into(), &commit_accessor).unwrap();
             let timer = start_timer("Generating Proof");
             let proof = VerifiableQueryResult::<DynamicDoryEvaluationProof>::new(
                 query.proof_expr(),
@@ -265,8 +267,7 @@ fn main() {
                     .load_commit(table_name)
                     .expect("Failed to load commit");
             }
-            let query =
-                QueryExpr::try_new(query, "example".parse().unwrap(), &commit_accessor).unwrap();
+            let query = QueryExpr::try_new(query, "example".into(), &commit_accessor).unwrap();
             let result: VerifiableQueryResult<DynamicDoryEvaluationProof> =
                 postcard::from_bytes(&fs::read(file).expect("Failed to read proof"))
                     .expect("Failed to deserialize proof");

@@ -50,7 +50,7 @@ serde = { workspace = true, features = ["serde_derive"] }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 snafu = { workspace = true }
-sqlparser = { workspace = true }
+sqlparser = { workspace = true, features = ["serde"]  }
 sysinfo = {workspace = true }
 tiny-keccak = { workspace = true }
 tracing = { workspace = true, features = ["attributes"] }
@@ -97,6 +97,11 @@ required-features = [ "std", "blitzar"]
 name = "commitment-utility"
 path = "utils/commitment-utility/main.rs"
 required-features = [ "std", "blitzar"]
+
+[[bin]]
+name = "yul_preprocessor"
+path = "utils/yul-preprocessor/main.rs"
+required-features = [ "std" ]
 
 [[example]]
 name = "hello_world"

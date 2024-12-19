@@ -31,10 +31,10 @@ use serde::{Deserialize, Serialize};
 /// ```
 ///
 /// This differs from the [`FilterExec`] in that the result is not a sparse table.
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub struct OstensibleFilterExec<H: ProverHonestyMarker> {
-    pub(super) aliased_results: Vec<AliasedDynProofExpr>,
-    pub(super) table: TableExpr,
+    pub(crate) aliased_results: Vec<AliasedDynProofExpr>,
+    pub(crate) table: TableExpr,
     /// TODO: add docs
     pub(crate) where_clause: DynProofExpr,
     phantom: PhantomData<H>,
@@ -115,7 +115,9 @@ where
     fn get_column_result_fields(&self) -> Vec<ColumnField> {
         self.aliased_results
             .iter()
-            .map(|aliased_expr| ColumnField::new(aliased_expr.alias, aliased_expr.expr.data_type()))
+            .map(|aliased_expr| {
+                ColumnField::new(aliased_expr.alias.clone(), aliased_expr.expr.data_type())
+            })
             .collect()
     }
 
@@ -171,7 +173,7 @@ impl ProverEvaluate for FilterExec {
         let res = Table::<'a, S>::try_from_iter_with_options(
             self.aliased_results
                 .iter()
-                .map(|expr| expr.alias)
+                .map(|expr| expr.alias.clone())
                 .zip(filtered_columns),
             TableOptions::new(Some(output_length)),
         )
@@ -235,7 +237,7 @@ impl ProverEvaluate for FilterExec {
         let res = Table::<'a, S>::try_from_iter_with_options(
             self.aliased_results
                 .iter()
-                .map(|expr| expr.alias)
+                .map(|expr| expr.alias.clone())
                 .zip(filtered_columns),
             TableOptions::new(Some(output_length)),
         )

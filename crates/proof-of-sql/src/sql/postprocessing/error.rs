@@ -1,6 +1,6 @@
 use alloc::string::String;
-use proof_of_sql_parser::Identifier;
 use snafu::Snafu;
+use sqlparser::ast::Ident;
 
 /// Errors in postprocessing
 #[derive(Snafu, Debug, PartialEq, Eq)]
@@ -31,9 +31,15 @@ pub enum PostprocessingError {
     },
     /// GROUP BY clause references a column not in a group by expression outside aggregate functions
     #[snafu(display("Invalid group by: column '{column}' must not appear outside aggregate functions or `GROUP BY` clause."))]
-    IdentifierNotInAggregationOperatorOrGroupByClause {
-        /// The column identifier
-        column: Identifier,
+    IdentNotInAggregationOperatorOrGroupByClause {
+        /// The column ident
+        column: Ident,
+    },
+    /// Errors in converting `Ident` to `Identifier`
+    #[snafu(display("Failed to convert `Ident` to `Identifier`: {error}"))]
+    IdentifierConversionError {
+        /// The underlying error message
+        error: String,
     },
     /// Errors in aggregate columns
     #[snafu(transparent)]

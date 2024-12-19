@@ -27,6 +27,7 @@ impl ProverEvaluate for RangeCheckTestPlan {
         table_map: &IndexMap<TableRef, Table<'a, S>>,
     ) -> Table<'a, S> {
         builder.request_post_result_challenges(1);
+        builder.produce_one_evaluation_length(256);
         table_map[&self.column.table_ref()].clone()
     }
 
@@ -62,7 +63,7 @@ impl ProofPlan for RangeCheckTestPlan {
     }
 
     fn get_column_references(&self) -> IndexSet<ColumnRef> {
-        indexset! {self.column}
+        indexset! {self.column.clone()}
     }
 
     #[doc = " Return all the tables referenced in the Query"]
@@ -92,15 +93,13 @@ impl ProofPlan for RangeCheckTestPlan {
 
 #[cfg(all(test, feature = "blitzar"))]
 mod tests {
-
+    use super::*;
     use crate::{
         base::database::{
             owned_table_utility::{owned_table, scalar},
             ColumnRef, ColumnType, OwnedTableTestAccessor,
         },
-        sql::{
-            proof::VerifiableQueryResult, proof_plans::range_check_test_plan::RangeCheckTestPlan,
-        },
+        sql::proof::VerifiableQueryResult,
     };
     use blitzar::proof::InnerProductProof;
 
@@ -113,7 +112,7 @@ mod tests {
         let t = "sxt.t".parse().unwrap();
         let accessor = OwnedTableTestAccessor::<InnerProductProof>::new_from_table(t, data, 0, ());
         let ast = RangeCheckTestPlan {
-            column: ColumnRef::new(t, "a".parse().unwrap(), ColumnType::Scalar),
+            column: ColumnRef::new(t, "a".into(), ColumnType::Scalar),
         };
         let verifiable_res = VerifiableQueryResult::<InnerProductProof>::new(&ast, &accessor, &());
         let _ = verifiable_res.verify(&ast, &accessor, &());
@@ -125,7 +124,7 @@ mod tests {
         let t = "sxt.t".parse().unwrap();
         let accessor = OwnedTableTestAccessor::<InnerProductProof>::new_from_table(t, data, 0, ());
         let ast = RangeCheckTestPlan {
-            column: ColumnRef::new(t, "a".parse().unwrap(), ColumnType::Scalar),
+            column: ColumnRef::new(t, "a".into(), ColumnType::Scalar),
         };
         let verifiable_res = VerifiableQueryResult::<InnerProductProof>::new(&ast, &accessor, &());
         let res: Result<
@@ -145,7 +144,7 @@ mod tests {
         let t = "sxt.t".parse().unwrap();
         let accessor = OwnedTableTestAccessor::<InnerProductProof>::new_from_table(t, data, 0, ());
         let ast = RangeCheckTestPlan {
-            column: ColumnRef::new(t, "a".parse().unwrap(), ColumnType::Scalar),
+            column: ColumnRef::new(t, "a".into(), ColumnType::Scalar),
         };
         let verifiable_res = VerifiableQueryResult::<InnerProductProof>::new(&ast, &accessor, &());
         let res: Result<
